@@ -1,0 +1,16 @@
+[project]
+name = "pv-attributes"
+version = "2024.12"
+authors = [{name = "Alic Znapy", email = "AlicZnapy@gmail.com"},]
+license = {file = "LICENSE"}
+readme = "README.md"
+urls = {homepage = "https://github.com/znapy/pv-attributes"}
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+# development dependency groups
+dev = [
+    "pytest",
+    "pytest-mock",
+]
+
