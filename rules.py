@@ -1,24 +1,33 @@
 """Rules to determine date and time of last modify."""
 
-import dataclasses
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+from zoneinfo import ZoneInfo
 
-from periods import PERIODS, SYSTEM_ZONE, timezone_for_date
+from config import PERIODS, SYSTEM_ZONE
+import helpers
 
 YEARS = {year for period in PERIODS \
               for year in range(period.start.year, period.end.year + 1)}
 
-@dataclasses.dataclass
-class FileStat:
-    """File stat."""
 
-    path: Path
-    mtime: datetime
+def timezone_for_date(date_n_time: datetime, path: Path) -> ZoneInfo:
+    """Get timezone for period."""
+    for period in reversed(PERIODS):
+        if not path.parent.is_relative_to(period.path):
+            continue
+        if period.start <= date_n_time.astimezone(SYSTEM_ZONE) \
+                        <= period.end:
+            return period.timezone
+    return SYSTEM_ZONE
 
-    def __post_init__(self):
-        self.mtime = self.mtime.replace(tzinfo=SYSTEM_ZONE)
+class FileStat(helpers.FileStatWithUTC):
+    """File stat with system time zone."""
+    @classmethod
+    def system_zone(cls) -> ZoneInfo:
+        """System zone from config."""
+        return SYSTEM_ZONE
 
 
 # return (True, date_n_time) if the rule is applied and new datetime is needed
@@ -34,17 +43,18 @@ def rule_date_n_time(file_stat: FileStat) -> tuple[bool, datetime | None]:
         return (False, None)
 
     try:
-        date_n_time = datetime.strptime(stem, "%Y%m%d_%H%M%S")
+        date_n_time_stem = datetime.strptime(stem, "%Y%m%d_%H%M%S")
     except ValueError:
         return (False, None)
 
-    if date_n_time.year not in YEARS:
-        print(f"Year {date_n_time.year} for file '{file_stat.path}'"
+    if date_n_time_stem.year not in YEARS:
+        print(f"Year {date_n_time_stem.year} for file '{file_stat.path}'"
               f" is not in years from periods.")
         return (True, None)
 
-    timezone = timezone_for_date(date_n_time, file_stat.path)
-    date_n_time = date_n_time.replace(tzinfo=timezone).astimezone(SYSTEM_ZONE)
+    timezone = timezone_for_date(date_n_time_stem, file_stat.path)
+    date_n_time = date_n_time_stem.replace(tzinfo=timezone) \
+                                  .astimezone(SYSTEM_ZONE)
 
     if date_n_time != file_stat.mtime:
         return (True, date_n_time)

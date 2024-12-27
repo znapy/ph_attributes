@@ -11,5 +11,5 @@ htmlcov/
 *.log.*
 .coverage
 .vscode/
-periods.py
+config.py
 samples/

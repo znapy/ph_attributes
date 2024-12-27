@@ -17,12 +17,10 @@ import argparse
 from datetime import datetime
 import os
 from pathlib import Path
-import sys
 from typing import Iterable
 
-from helpers import to_datetime
+from helpers import to_datetime, to_unixtime
 from rules import SYSTEM_ZONE, PERIODS, Rule, FileStat, rule_date_n_time
-# os.utime(p, times=(st.st_atime, st.st_mtime))
 
 def get_args() -> argparse.Namespace:
     """Parse launch parameters."""
@@ -38,9 +36,10 @@ def get_args() -> argparse.Namespace:
 
     args = parser.parse_args()
     if args.change_files:
-        print("Change files.")
-    else:
-        print("Only display changes.")
+        print("The changed files:")
+    if not args.change_files:
+        print("The files will not be changed"
+              " (execute with flag '-c' if need to change them):")
     return args
 
 def get_file_stat(path: Path) -> FileStat:
@@ -48,41 +47,53 @@ def get_file_stat(path: Path) -> FileStat:
     return FileStat(path=path,
                     mtime=to_datetime(path.stat().st_mtime, SYSTEM_ZONE))
 
-
-def rules() -> Iterable[Rule]:
-    """Get rules."""
-    return (
-        rule_date_n_time,
-    )
-
-def apply_rule(func: Rule, file_stat: FileStat
+def _rule_appropriate(func: Rule, file_stat: FileStat
                ) -> tuple[bool, datetime | None]:
     """
-    Try to apply the rule to FileStat.
-
-    return is it applied and different datetime needed
+    Is the rule appropriate for the FileStat and the different datetime needed.
     """
     return func(file_stat)
 
+def _apply_new_date(new_date: datetime, file_stat: FileStat,
+                   args: argparse.Namespace) -> None:
+    """Apply new date."""
+    message = f"{file_stat.path} {file_stat.mtime: %Y-%m-%d_%H:%M:%S}" \
+              f" -> {new_date: %Y-%m-%d_%H:%M:%S}"
+
+    if args.change_files:
+        unix_time = to_unixtime(new_date)
+        os.utime(file_stat.path, times=(unix_time, unix_time))
+
+    print(message)
+
+def apply_rules(file_stat: FileStat, args: argparse.Namespace) -> bool:
+    """Apply rules."""
+    rules: Iterable[Rule] = (  # All rules to type checker
+        rule_date_n_time,
+    )
+
+    for rule in rules:
+        appropriate, new_date = _rule_appropriate(rule, file_stat)
+        if new_date is not None:
+            _apply_new_date(new_date, file_stat, args)
+        if appropriate:
+            # only first appropriate rule is needed
+            return new_date is not None
+    return False
 
 def main() -> None:
     """Main function."""
     args = get_args()
 
-    checked_paths = []
-    for period in PERIODS:
-        if period.path in checked_paths:
-            continue
-        checked_paths.append(period.path)
-        for dirpath, _, files in period.path.walk(on_error=print):
+    applies = False
+    for source_dir in {period.path for period in PERIODS}:
+        for dirpath, _, files in source_dir.walk(on_error=print):
             for filename in files:
                 file_stat = get_file_stat(Path(dirpath) / filename)
-                for rule in rules():
-                    applied, new_dt = apply_rule(rule, file_stat)
-                    if new_dt:
-                        print(f"{file_stat.path} {file_stat.mtime} -> {new_dt}")
-                    if applied:
-                        break
+                applies = apply_rules(file_stat, args) | applies
+    if not applies:
+        print("No files appropriate for the rules.")
+
 
 if __name__ == "__main__":
     main()
