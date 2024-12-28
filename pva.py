@@ -19,8 +19,8 @@ import os
 from pathlib import Path
 from typing import Iterable
 
-from helpers import to_datetime, to_unixtime
-from rules import SYSTEM_ZONE, PERIODS, Rule, FileStat, rule_date_n_time
+from helpers import to_unixtime
+import rules
 
 def get_args() -> argparse.Namespace:
     """Parse launch parameters."""
@@ -42,20 +42,8 @@ def get_args() -> argparse.Namespace:
               " (execute with flag '-c' if need to change them):")
     return args
 
-def get_file_stat(path: Path) -> FileStat:
-    """Get file stat."""
-    return FileStat(path=path,
-                    mtime=to_datetime(path.stat().st_mtime, SYSTEM_ZONE))
-
-def _rule_appropriate(func: Rule, file_stat: FileStat
-               ) -> tuple[bool, datetime | None]:
-    """
-    Is the rule appropriate for the FileStat and the different datetime needed.
-    """
-    return func(file_stat)
-
-def _apply_new_date(new_date: datetime, file_stat: FileStat,
-                   args: argparse.Namespace) -> None:
+def _apply_new_date(new_date: datetime, file_stat: rules.FileStat,
+                    args: argparse.Namespace) -> None:
     """Apply new date."""
     message = f"{file_stat.path} {file_stat.mtime: %Y-%m-%d_%H:%M:%S}" \
               f" -> {new_date: %Y-%m-%d_%H:%M:%S}"
@@ -66,14 +54,15 @@ def _apply_new_date(new_date: datetime, file_stat: FileStat,
 
     print(message)
 
-def apply_rules(file_stat: FileStat, args: argparse.Namespace) -> bool:
+def apply_rules(file_stat: rules.FileStat, args: argparse.Namespace) -> bool:
     """Apply rules."""
-    rules: Iterable[Rule] = (  # All rules to type checker
-        rule_date_n_time,
+    all_rules: Iterable[rules.Rule] = (  # For type checker
+        rules.rule_date_n_time,
+        rules.rule_date_n_time_prefix,
     )
 
-    for rule in rules:
-        appropriate, new_date = _rule_appropriate(rule, file_stat)
+    for rule in all_rules:
+        appropriate, new_date = rules.appropriate(rule, file_stat)
         if new_date is not None:
             _apply_new_date(new_date, file_stat, args)
         if appropriate:
@@ -86,10 +75,10 @@ def main() -> None:
     args = get_args()
 
     applies = False
-    for source_dir in {period.path for period in PERIODS}:
+    for source_dir in {period.path for period in rules.PERIODS}:
         for dirpath, _, files in source_dir.walk(on_error=print):
             for filename in files:
-                file_stat = get_file_stat(Path(dirpath) / filename)
+                file_stat = rules.FileStat(Path(dirpath) / filename)
                 applies = apply_rules(file_stat, args) | applies
     if not applies:
         print("No files appropriate for the rules.")

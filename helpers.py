@@ -37,10 +37,15 @@ class FileStatWithUTC:
     path: Path
     mtime: datetime
 
+    def __init__(self, path: Path, mtime: datetime | None = None):
+        self.path = path
+        if mtime is None:
+            self.mtime = to_datetime(path.stat().st_mtime, self.system_zone())
+        else:
+            self.mtime = mtime.replace(tzinfo=self.system_zone())
+
     @classmethod
     def system_zone(cls) -> ZoneInfo:
         """System zone will be replaced from config."""
         return ZoneInfo("Etc/UTC")
 
-    def __post_init__(self):
-        self.mtime = self.mtime.replace(tzinfo=self.system_zone())
