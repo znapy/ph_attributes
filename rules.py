@@ -34,8 +34,7 @@ class FileStat(helpers.FileStatWithUTC):
 RuleResult = tuple[bool, datetime | None]
 Rule = Callable[[FileStat], RuleResult]
 
-def appropriate(func: Rule, file_stat: FileStat
-                ) -> tuple[bool, datetime | None]:
+def appropriate(func: Rule, file_stat: FileStat) -> RuleResult:
     """
     Is the rule appropriate for the FileStat and the different datetime needed.
     """
@@ -71,32 +70,23 @@ def _apply_time_zone(date_n_time_stem: datetime, file_stat: FileStat
         return date_n_time
     return None
 
+def _first_digit_index(candidate: str) -> int | None:
+    """Get index of first digit in candidate."""
+    return next(
+        (i for i, char in enumerate(candidate) if char.isdigit()),
+        None)
 
 def rule_date_n_time(file_stat: FileStat) -> RuleResult:
     """
-    Plain date and time in name.
-
-    Example: '20150617_191500.jpg'.
-    """
-    date_n_time_stem = _get_date_n_time(file_stat.path.stem[:15])
-    if date_n_time_stem is None:
-        return (False, None)
-
-    return (True, _apply_time_zone(date_n_time_stem, file_stat))
-
-
-def rule_date_n_time_prefix(file_stat: FileStat) -> RuleResult:
-    """
-    Date and time in name after non-digit prefix.
+    Date and time in name (may contain non-digit prefix).
 
     Examples:
         IMG_20191127_194031.jpg, IMG_20200201_205103_1.jpg,
         VID_20200801_081626_LS.mp4, PXL_20230906_111508295.jpg,
-        PXL_20230906_122117759.TS.mp4,
+        PXL_20230906_122117759.TS.mp4, 20150617_191500.jpg
         PXL_20240102_112534347_exported_stabilized_1704194757966.gif
     """
-    first_digit = next((i for i, char in enumerate(file_stat.path.stem) \
-                        if char.isdigit()), None)
+    first_digit = _first_digit_index(file_stat.path.stem)
     if first_digit is None:
         return (False, None)
 
@@ -107,4 +97,46 @@ def rule_date_n_time_prefix(file_stat: FileStat) -> RuleResult:
 
     return (True, _apply_time_zone(date_n_time_stem, file_stat))
 
-# , , VID-20200412-WA0000.mp4
+
+def _get_date_without_time(candidate: str) -> datetime | None:
+    """Get date and time from file part."""
+    if len(candidate) != 8 \
+            or candidate[:8].isdigit() is False:
+        return None
+
+    try:
+        return datetime.strptime(candidate, "%Y%m%d")
+    except ValueError:
+        return None
+
+def _add_time_from_stat(date_n_time_stem: datetime, file_stat: FileStat
+                        ) -> datetime | None:
+    """Add time to date from file mtime."""
+    if date_n_time_stem.year not in YEARS:
+        print(f"Year {date_n_time_stem.year} for file '{file_stat.path}'"
+              f" is not in years from periods.")
+        return None
+
+    time = file_stat.mtime.astimezone(SYSTEM_ZONE).time()
+    date_n_time = datetime.combine(date_n_time_stem.date(), time, SYSTEM_ZONE)
+
+    if date_n_time != file_stat.mtime:
+        return date_n_time
+    return None
+
+def rule_date_without_time(file_stat: FileStat) -> RuleResult:
+    """
+    Date without time in name.
+
+    Example: 'VID-20200412-WA0000.mp4'.
+    """
+    first_digit = _first_digit_index(file_stat.path.stem)
+    if first_digit is None:
+        return (False, None)
+
+    date_without_time_stem = _get_date_without_time(
+        file_stat.path.stem[first_digit:first_digit+8])
+    if date_without_time_stem is None:
+        return (False, None)
+
+    return (True, _add_time_from_stat(date_without_time_stem, file_stat))

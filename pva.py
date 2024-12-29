@@ -58,7 +58,7 @@ def apply_rules(file_stat: rules.FileStat, args: argparse.Namespace) -> bool:
     """Apply rules."""
     all_rules: Iterable[rules.Rule] = (  # For type checker
         rules.rule_date_n_time,
-        rules.rule_date_n_time_prefix,
+        rules.rule_date_without_time,
     )
 
     for rule in all_rules:

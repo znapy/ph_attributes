@@ -65,19 +65,35 @@ def test_date_n_time(mocker: MockFixture) -> None:
         mtime=datetime(2024, 12, 31, 1, 1, 0))
         ) == (True, None)
 
-def test_date_n_time_prefix(mocker: MockFixture) -> None:
-    """Test rule 'date_n_time_prefix'."""
-    mocker.patch("rules.PERIODS", PERIODS)
-    mocker.patch("rules.SYSTEM_ZONE", SYSTEM_ZONE)
-
-    assert rules.rule_date_n_time_prefix(rules.FileStat(
+    assert rules.rule_date_n_time(rules.FileStat(
         path=Path("/a/b/IMG_20101231_191530_1.jpg"),  # 19 in MSK is 16 in UTC
         mtime=datetime(2010, 12, 31, 16, 15, 30))
         ) == (True, None)
 
     # Wrong prefix
-    assert rules.rule_date_n_time_prefix(rules.FileStat(
+    assert rules.rule_date_n_time(rules.FileStat(
         path=Path("/a/b/000_20101231_191530.jpg"),
         mtime=datetime(2010, 12, 31, 16, 15, 30))
         ) == (False, None)
 
+
+def test_date_without_time(mocker: MockFixture) -> None:
+    """Test rule 'date_without_time'."""
+    mocker.patch("rules.PERIODS", PERIODS)
+    mocker.patch("rules.SYSTEM_ZONE", SYSTEM_ZONE)
+
+    assert rules.rule_date_without_time(rules.FileStat(
+        path=Path("/a/b/20101231.jpg"),
+        mtime=datetime(2010, 12, 31, 16, 15, 30))
+        ) == (True, None)
+
+    # The year before periods
+    assert rules.rule_date_without_time(rules.FileStat(
+        path=Path("/a/b/19990301.jpg"),
+        mtime=datetime(2024, 12, 31, 1, 1, 0))
+        ) == (True, None)
+
+    assert rules.rule_date_without_time(rules.FileStat(
+        path=Path("/a/b/20101231.jpg"),
+        mtime=datetime(2010, 11, 30, 16, 15, 30))
+        ) == (True, datetime(2010, 12, 31, 16, 15, 30, tzinfo=SYSTEM_ZONE))

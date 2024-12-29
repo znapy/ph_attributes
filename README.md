@@ -3,6 +3,8 @@
 Change in files the time of last modification (st_mtime file stat).
 Different source directories can have different name patterns and time zones.
 
+Some photo-video managers (f.e. [immich](https://immich.app/)) use the time modification from the file if there are no ExifTags inside the file. If you copied files without attributes preserve - these photos are not displayed correctly on the timeline. This script takes date from the file path/name and corrects the property.
+
 # Requirements
 
 - python3.12+
