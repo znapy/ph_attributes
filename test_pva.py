@@ -1,6 +1,7 @@
 """Pytests for the pva module."""
 
 from datetime import datetime
+import os
 from pathlib import Path
 from pytest_mock import MockFixture
 import tempfile
@@ -10,12 +11,14 @@ from config_example import Period, SYSTEM_ZONE
 import pva
 
 
-def _configure_tmp_dir(path: Path) -> tuple[list[Period], Path]:
-    subdir = path / "name with spaces"
-    subdir.mkdir()
-    filepath = subdir / '20231231_191530.jpg'
+def _configure_tmp_dir(path: Path, subdir_name: str, filename: str
+                       ) -> tuple[list[Period], Path]:
+    subdir = path / subdir_name
+    subdir.mkdir(parents=True)
+    filepath = subdir / filename
     with open(filepath, 'w') as f:
         f.write('')
+    os.utime(filepath, times=(1605270645, 1605270645))  # 2020-11-13 12:30:45
 
     return ([
         Period(
@@ -32,17 +35,36 @@ def _configure_tmp_dir(path: Path) -> tuple[list[Period], Path]:
         ),
     ], filepath)
 
-def test_main(mocker: MockFixture) -> None:
-    """Test main function - scenario for 1 file."""
+def _check_mtime(mocker: MockFixture, filepath: Path, unix_time: int,
+                 periods: list[Period]) -> None:
+    """Check mtime of the file."""
+    mocker.patch("pva.rules.PERIODS", periods)
+    mocker.patch("pva.rules.SYSTEM_ZONE", SYSTEM_ZONE)
+    mocker.patch("pva.get_args", lambda: mocker.MagicMock(change_files=True))
+
+    assert int(filepath.stat().st_mtime) != unix_time
+    pva.main()
+    assert int(filepath.stat().st_mtime) == unix_time
+
+
+def test_main__path_with_space(mocker: MockFixture) -> None:
+    """Test main function - scenario for a file with date and time."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        periods, filepath = _configure_tmp_dir(Path(tmp_dir))
-        unix_time = 1704050130  # date from filename in *filepath*
+        periods, filepath = _configure_tmp_dir(
+            Path(tmp_dir), "name with spaces", '20231231_191530.jpg')
+        unix_time = 1704050130  # equivalent filename: 2023-12-31 19:15:30
 
-        mocker.patch("pva.rules.PERIODS", periods)
-        mocker.patch("pva.rules.SYSTEM_ZONE", SYSTEM_ZONE)
-        mocker.patch("pva.get_args",
-                     lambda: mocker.MagicMock(change_files=True))
+        _check_mtime(mocker, filepath, unix_time, periods)
 
-        assert int(filepath.stat().st_mtime) != unix_time
-        pva.main()
-        assert int(filepath.stat().st_mtime) == unix_time
+def test_main__filename_and_dir_with_date(mocker: MockFixture) -> None:
+    """
+    Test main function - scenario for a file (date) and dir (year-month).
+
+    In this conflict rules the filename rule is more important.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        periods, filepath = _configure_tmp_dir(
+            Path(tmp_dir), "2023-12", '2023-12-31.jpg')
+        unix_time = 1704025845  # 2023-12-31 12:30:45
+
+        _check_mtime(mocker, filepath, unix_time, periods)

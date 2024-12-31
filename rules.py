@@ -98,14 +98,19 @@ def rule_date_n_time(file_stat: FileStat) -> RuleResult:
     return (True, _apply_time_zone(date_n_time_stem, file_stat))
 
 
-def _get_date_without_time(candidate: str) -> datetime | None:
-    """Get date and time from file part."""
-    if len(candidate) != 8 \
-            or candidate[:8].isdigit() is False:
-        return None
+def _get_date_without_time(candidate: str, date_format: str = "%Y%m%d"
+                           ) -> datetime | None:
+    """
+    Get date and time from file part.
 
+    The date_format may contains '%Y', '%m' and '%d'.
+    """
+    length = len(date_format.replace("%Y", "2020").replace("%m", "12")
+                 .replace("%d", "31"))
+    if len(candidate) < length:
+        return None
     try:
-        return datetime.strptime(candidate, "%Y%m%d")
+        return datetime.strptime(candidate[:length], date_format)
     except ValueError:
         return None
 
@@ -133,10 +138,45 @@ def rule_date_without_time(file_stat: FileStat) -> RuleResult:
     first_digit = _first_digit_index(file_stat.path.stem)
     if first_digit is None:
         return (False, None)
+    candidate = file_stat.path.stem[first_digit:]
 
-    date_without_time_stem = _get_date_without_time(
-        file_stat.path.stem[first_digit:first_digit+8])
-    if date_without_time_stem is None:
+    for date_format in ("%Y%m%d", "%Y-%m-%d"):
+        date_in_name = _get_date_without_time(candidate, date_format)
+        if date_in_name is None:
+            continue
+        return (True, _add_time_from_stat(date_in_name, file_stat))
+
+    return (False, None)
+
+
+
+def _parent_with_year(path: Path) -> Path | None:
+    """Get parent directory started with year."""
+    for parent in path.parents:
+        year_part = parent.name[:4]
+        if year_part.isdigit() and int(year_part) in YEARS:
+            return parent
+    return None
+
+def rule_date_in_dir(file_stat: FileStat) -> RuleResult:
+    """
+    Date in directory name.
+
+    Example: '/a/b/2020-12-31/SNC00001.jpg'.
+    """
+    if (parent := _parent_with_year(file_stat.path)) is None:
         return (False, None)
 
-    return (True, _add_time_from_stat(date_without_time_stem, file_stat))
+    for date_format in ("%Y-%m-%d", "%Y-%m", "%Y"):
+        date_in_dir = _get_date_without_time(parent.name, date_format)
+        if date_in_dir is None:
+            continue
+
+        date_n_time = date_in_dir.replace(tzinfo=SYSTEM_ZONE)
+        if "%m" not in date_format:
+            date_n_time = date_n_time.replace(month=file_stat.mtime.month)
+        if "%d" not in date_format:
+            date_n_time = date_n_time.replace(day=file_stat.mtime.day)
+        return (True, _add_time_from_stat(date_n_time, file_stat))
+
+    return (False, None)
